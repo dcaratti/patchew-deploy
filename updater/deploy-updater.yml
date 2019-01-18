@@ -1,0 +1,101 @@
+# deploy on the given host a cron job that mirrors a
+# given repository on a given github account
+#
+# Usage:
+#
+# ansible-playbook -i hosts -e "updater_user=tdc-updater" \
+#                     -e "updater_key=updater.key" \
+#                     -e "updater_pubkey=updater.pub" \
+#                     deploy-updater.yml
+#
+---
+- hosts: updater
+  gather_facts: false
+  vars_prompt:
+    - name: updater_user
+      prompt: "user that will update the account"
+      default: github-updater
+      private: no
+    - name: updater_password
+      prompt: "(hash of) password for logging into the account"
+      private: no
+    - name: updater_pubkey
+      prompt: "public key for connecting to the account"
+      private: no
+    - name: updater_key
+      prompt: "key for connecting to the account"
+      private: no
+    - name: master_repo
+      prompt: "the master git repository"
+      default: "git://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next.git"
+      private: no
+    - name: private_repo
+      prompt: "the private git repository"
+      default: "git@github.com:dcaratti/net-next.git"
+      private: no
+
+  tasks:
+   - name: enable EPEL repository
+     yum_repository:
+       name: epel_repo
+       description: EPEL YUM repo
+       baseurl:  https://dl.fedoraproject.org/pub/epel/7/x86_64/
+       enabled: true
+       gpgcheck: false
+   - name: install required rpms
+     yum:
+       name: [ cronie, git, gcc, kernel-headers, make, bison, flex ]
+       state: present
+   - name: create user "{{ updater_user }}"
+     user:
+       name: "{{ updater_user }}"
+       password: "{{ updater_password }}"
+       shell: /bin/bash
+       generate_ssh_key: yes
+   - name: create dirs
+     file:
+       path: "{{ item }}"
+       state: directory
+       owner: "{{ updater_user }}"
+       group: "{{ updater_user }}"
+     with_items:
+     - "/home/{{ updater_user }}/bin"
+     - "/opt/updater-git"
+   - name: template configuration and unit files
+     template: src={{ item.src }} dest={{ item.dest }}
+     with_items:
+     - { src: updater.conf.j2, dest: "/home/{{ updater_user }}/.updater.conf" }
+   - name: copy scripts and identity files
+     copy: src={{ item.src }} dest={{ item.dest }} owner={{ item.owner }} mode={{ item.mode }}
+     with_items:
+     - { src: "{{ updater_pubkey }}", dest: "/home/{{ updater_user }}/.ssh/id_rsa.pub", owner: "{{ updater_user }}",  mode: 644 }
+     - { src: "{{ updater_key }}", dest: "/home/{{ updater_user }}/.ssh/id_rsa", owner: "{{ updater_user }}", mode: 600 }
+     - { src: repoupdate.sh, dest: "/home/{{ updater_user }}/bin/repoupdate.sh", owner: "{{ updater_user }}", mode: 755 }
+     - { src: tcupdate.sh, dest: "/home/{{ updater_user }}/bin/tcupdate.sh", owner: "{{ updater_user }}", mode: 755 }
+   - name: Update known hosts
+     known_hosts:
+       path: "/home/{{ updater_user }}/.ssh/known_hosts"
+       name: "{{ item }}"
+       key: "{{ lookup('pipe', 'ssh-keyscan {{ item }},`dig +short {{ item }}`') }}"
+     with_items:
+     - github.com
+   - name: cron job to update the repo periodically
+     cron:
+       name: update linux repo
+       minute: 40
+       job: /home/{{ updater_user }}/bin/repoupdate.sh
+       state: present
+       user: "{{ updater_user }}"
+   - name: cron job to update iproute2 periodically
+     cron:
+       name: update iproute2 repo
+       hour: 2
+       minute: 55
+       job: /home/{{ updater_user }}/bin/tcupdate.sh
+       state: present
+       user: "{{ updater_user }}"
+   - name: start the cron service
+     systemd:
+       state: restarted
+       daemon_reload: yes
+       name: crond
