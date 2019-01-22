@@ -78,16 +78,6 @@
      with_items:
      - github.com
 
-   - name: Add virt-builder repo for RHEL
-     copy:
-       content: |
-          [rhel]
-          uri=http://file.rdu.redhat.com/~rjones/builder/index.asc
-       dest: /etc/virt-builder/repos.d/rhel.conf
-       mode: 0644
-       owner: root
-       group: root
-
    - name: Download/build f29 VM base image
      shell: |
        export LIBGUESTFS_BACKEND=direct;
