@@ -1,0 +1,9 @@
+[Unit]
+Description=run tdc.service 15 seconds after boot
+
+[Timer]
+OnBootSec=15
+Unit=tdc.service
+
+[Install]
+WantedBy=multi-user.target

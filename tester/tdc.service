@@ -1,0 +1,8 @@
+[Unit]
+Description=Run TDC suite
+
+[Service]
+Type=simple
+StandardOutput=journal+console
+ExecStart=/usr/local/sbin/run_tdc.sh
+
